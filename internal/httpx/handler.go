@@ -10,12 +10,14 @@ import (
 
 type Counter interface {
 	Increment(token string) error
+	Get(token string) (int64, error)
 	All() (map[string]int64, error)
 }
 
 type Config struct {
 	PathPrefix string
 	StatsPath  string
+	ViewPath   string
 	MinToken   int
 	MaxToken   int
 }
@@ -42,6 +44,13 @@ func New(cfg Config, counter Counter, logger *slog.Logger) http.Handler {
 	if !strings.HasPrefix(cfg.StatsPath, "/") {
 		cfg.StatsPath = "/" + cfg.StatsPath
 	}
+	if cfg.ViewPath == "" {
+		cfg.ViewPath = "/v"
+	}
+	if !strings.HasPrefix(cfg.ViewPath, "/") {
+		cfg.ViewPath = "/" + cfg.ViewPath
+	}
+	cfg.ViewPath = strings.TrimSuffix(cfg.ViewPath, "/")
 	if cfg.MinToken <= 0 {
 		cfg.MinToken = 20
 	}
@@ -60,6 +69,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet && r.URL.Path == h.cfg.StatsPath {
 		h.serveStats(w)
 		return
+	}
+	if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, h.cfg.StatsPath+"/") {
+		token := strings.TrimPrefix(r.URL.Path, h.cfg.StatsPath+"/")
+		if h.validToken(token) {
+			h.serveCount(w, token)
+			return
+		}
+	}
+	if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, h.cfg.ViewPath+"/") {
+		token := strings.TrimPrefix(r.URL.Path, h.cfg.ViewPath+"/")
+		if h.validToken(token) {
+			h.serveCount(w, token)
+			return
+		}
 	}
 
 	if r.Method != http.MethodGet && r.Method != http.MethodPost {
@@ -112,17 +135,37 @@ func (h *Handler) serveStats(w http.ResponseWriter) {
 	}
 }
 
+func (h *Handler) serveCount(w http.ResponseWriter, token string) {
+	count, err := h.counter.Get(token)
+	if err != nil {
+		h.logger.Error("counter_read_failed", "error", err)
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("{\"error\":\"failed to read counter\"}\n"))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if err := json.NewEncoder(w).Encode(count); err != nil {
+		h.logger.Error("counter_read_response_failed", "error", err)
+	}
+}
+
 func (h *Handler) extractToken(path string) (string, bool) {
 	if !strings.HasPrefix(path, h.cfg.PathPrefix) {
 		return "", false
 	}
 
 	token := strings.TrimPrefix(path, h.cfg.PathPrefix)
+	return token, h.validToken(token)
+}
+
+func (h *Handler) validToken(token string) bool {
 	if token == "" || strings.Contains(token, "/") {
-		return "", false
+		return false
 	}
 	if len(token) < h.cfg.MinToken || len(token) > h.cfg.MaxToken {
-		return "", false
+		return false
 	}
 
 	for i := 0; i < len(token); i++ {
@@ -133,8 +176,8 @@ func (h *Handler) extractToken(path string) (string, bool) {
 			c == '-' || c == '_' {
 			continue
 		}
-		return "", false
+		return false
 	}
 
-	return token, true
+	return true
 }

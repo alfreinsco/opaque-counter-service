@@ -87,6 +87,48 @@ func (c *Client) Increment(token string) error {
 	return nil
 }
 
+func (c *Client) Get(token string) (int64, error) {
+	if c.closed.Load() {
+		return 0, errors.New("redis client closed")
+	}
+
+	rc, err := c.get()
+	if err != nil {
+		return 0, err
+	}
+
+	healthy := false
+	defer func() {
+		if healthy {
+			c.put(rc)
+		} else {
+			_ = rc.Close()
+		}
+	}()
+
+	if err := rc.SetDeadline(time.Now().Add(c.cfg.IOTimeout)); err != nil {
+		return 0, err
+	}
+	if err := writeCommand(rc, "GET", c.cfg.KeyPrefix+token); err != nil {
+		return 0, err
+	}
+
+	value, exists, err := readBulkString(rc.reader)
+	if err != nil {
+		return 0, err
+	}
+	healthy = true
+	if !exists {
+		return 0, nil
+	}
+
+	count, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid counter value: %w", err)
+	}
+	return count, nil
+}
+
 func (c *Client) All() (map[string]int64, error) {
 	if c.closed.Load() {
 		return nil, errors.New("redis client closed")

@@ -10,6 +10,9 @@ Tiny public counter collector written in Go using only the standard library.
 - Invalid paths/tokens, unsupported HTTP methods, and Redis errors still look like `204` to the caller.
 - Redis error details are written only to server logs.
 - `GET /stats` returns all counters as JSON for internal/admin use.
+- `GET /stats/{opaque-token}` returns only that counter's stored count.
+- `GET /v/{opaque-token}` is the short route for reading one stored count.
+- `GET /v` never lists all counters and returns `204 No Content`.
 - The service does not know whether a token means a view, download, click, news slug, application view, etc.
 
 A token is simply the counter ID. Keep the semantic mapping in the application that owns the counter.
@@ -81,6 +84,24 @@ Example response:
 {"counters":[{"token":"YOUR_RANDOM_TOKEN","count":3}],"total":1}
 ```
 
+Read one counter through HTTP:
+
+```bash
+curl http://127.0.0.1:8080/stats/YOUR_RANDOM_TOKEN
+```
+
+Or use the shorter route:
+
+```bash
+curl http://127.0.0.1:8080/v/YOUR_RANDOM_TOKEN
+```
+
+The response is only the JSON number. A token that has not been counted yet returns `0`:
+
+```json
+3
+```
+
 The endpoint is only bound to localhost by the default Docker configuration. Add authentication at your reverse proxy before exposing it publicly.
 
 Read one count directly from Redis:
@@ -108,6 +129,7 @@ Also, GET may be triggered by crawlers, prefetchers, link scanners, or proxies. 
 | `KEY_PREFIX` | `c:v1:` | Prefix for Redis counter keys |
 | `PATH_PREFIX` | `/x/` | Public opaque route prefix |
 | `STATS_PATH` | `/stats` | Internal endpoint for reading all counters |
+| `VIEW_PATH` | `/v` | Endpoint prefix for reading one counter only |
 | `MIN_TOKEN_LENGTH` | `20` | Minimum accepted token length |
 | `MAX_TOKEN_LENGTH` | `96` | Maximum accepted token length |
 

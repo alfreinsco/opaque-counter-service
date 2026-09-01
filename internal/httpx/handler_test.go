@@ -14,8 +14,15 @@ type fakeCounter struct {
 	calls  int
 	token  string
 	err    error
+	count  int64
+	getErr error
 	all    map[string]int64
 	allErr error
+}
+
+func (f *fakeCounter) Get(token string) (int64, error) {
+	f.token = token
+	return f.count, f.getErr
 }
 
 func (f *fakeCounter) All() (map[string]int64, error) {
@@ -63,6 +70,95 @@ func TestGetStatsRedisError(t *testing.T) {
 	res := httptest.NewRecorder()
 
 	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/stats", nil))
+
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", res.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestGetOneCount(t *testing.T) {
+	token := "abcdefghijklmnopqrstuvwx"
+	fc := &fakeCounter{count: 7}
+	h := New(Config{StatsPath: "/stats"}, fc, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	res := httptest.NewRecorder()
+
+	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/stats/"+token, nil))
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", res.Code, http.StatusOK)
+	}
+	if got := res.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
+		t.Fatalf("content type = %q", got)
+	}
+	if got := res.Body.String(); got != "7\n" {
+		t.Fatalf("body = %q, want %q", got, "7\\n")
+	}
+	if fc.token != token {
+		t.Fatalf("token = %q, want %q", fc.token, token)
+	}
+	if fc.calls != 0 {
+		t.Fatalf("stats request incremented counter %d times", fc.calls)
+	}
+}
+
+func TestViewOneCount(t *testing.T) {
+	token := "abcdefghijklmnopqrstuvwx"
+	fc := &fakeCounter{count: 11}
+	h := New(Config{ViewPath: "/v"}, fc, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	res := httptest.NewRecorder()
+
+	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/v/"+token, nil))
+
+	if res.Code != http.StatusOK || res.Body.String() != "11\n" {
+		t.Fatalf("status = %d body = %q", res.Code, res.Body.String())
+	}
+	if fc.token != token {
+		t.Fatalf("token = %q, want %q", fc.token, token)
+	}
+	if fc.calls != 0 {
+		t.Fatalf("view request incremented counter %d times", fc.calls)
+	}
+}
+
+func TestViewRootDoesNotListCounters(t *testing.T) {
+	for _, path := range []string{"/v", "/v/"} {
+		t.Run(path, func(t *testing.T) {
+			fc := &fakeCounter{all: map[string]int64{"abcdefghijklmnopqrstuvwx": 9}}
+			h := New(Config{ViewPath: "/v"}, fc, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			res := httptest.NewRecorder()
+
+			h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, path, nil))
+
+			if res.Code != http.StatusNoContent || res.Body.Len() != 0 {
+				t.Fatalf("status = %d body = %q", res.Code, res.Body.String())
+			}
+			if fc.token != "" || fc.calls != 0 {
+				t.Fatalf("view root accessed counter: token=%q calls=%d", fc.token, fc.calls)
+			}
+		})
+	}
+}
+
+func TestGetOneMissingCountReturnsZero(t *testing.T) {
+	token := "abcdefghijklmnopqrstuvwx"
+	fc := &fakeCounter{}
+	h := New(Config{StatsPath: "/stats"}, fc, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	res := httptest.NewRecorder()
+
+	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/stats/"+token, nil))
+
+	if res.Code != http.StatusOK || res.Body.String() != "0\n" {
+		t.Fatalf("status = %d body = %q", res.Code, res.Body.String())
+	}
+}
+
+func TestGetOneCountRedisError(t *testing.T) {
+	token := "abcdefghijklmnopqrstuvwx"
+	fc := &fakeCounter{getErr: errors.New("redis unavailable")}
+	h := New(Config{StatsPath: "/stats"}, fc, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	res := httptest.NewRecorder()
+
+	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/stats/"+token, nil))
 
 	if res.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", res.Code, http.StatusInternalServerError)
