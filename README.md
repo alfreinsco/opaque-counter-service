@@ -16,6 +16,7 @@ Tiny public counter collector written in Go using only the standard library.
 - The service does not know whether a token means a view, download, click, news slug, application view, etc.
 
 A token is simply the counter ID. Keep the semantic mapping in the application that owns the counter.
+Tokens may contain letters, numbers, dots (`.`), commas (`,`), hyphens (`-`), and underscores (`_`).
 
 Example mapping in your main application:
 
@@ -130,8 +131,8 @@ Also, GET may be triggered by crawlers, prefetchers, link scanners, or proxies. 
 | `PATH_PREFIX` | `/x/` | Public opaque route prefix |
 | `STATS_PATH` | `/stats` | Internal endpoint for reading all counters |
 | `VIEW_PATH` | `/v` | Endpoint prefix for reading one counter only |
-| `MIN_TOKEN_LENGTH` | `20` | Minimum accepted token length |
-| `MAX_TOKEN_LENGTH` | `96` | Maximum accepted token length |
+| `MIN_TOKEN_LENGTH` | `1` | Minimum accepted token length |
+| `MAX_TOKEN_LENGTH` | `100` | Maximum accepted token length |
 
 ## Why Redis only?
 

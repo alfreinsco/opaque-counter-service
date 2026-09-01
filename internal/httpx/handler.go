@@ -52,10 +52,10 @@ func New(cfg Config, counter Counter, logger *slog.Logger) http.Handler {
 	}
 	cfg.ViewPath = strings.TrimSuffix(cfg.ViewPath, "/")
 	if cfg.MinToken <= 0 {
-		cfg.MinToken = 20
+		cfg.MinToken = 1
 	}
 	if cfg.MaxToken < cfg.MinToken {
-		cfg.MaxToken = 96
+		cfg.MaxToken = 100
 	}
 
 	return &Handler{cfg: cfg, counter: counter, logger: logger}
@@ -173,7 +173,7 @@ func (h *Handler) validToken(token string) bool {
 		if (c >= 'a' && c <= 'z') ||
 			(c >= 'A' && c <= 'Z') ||
 			(c >= '0' && c <= '9') ||
-			c == '-' || c == '_' {
+			c == '-' || c == '_' || c == '.' || c == ',' {
 			continue
 		}
 		return false

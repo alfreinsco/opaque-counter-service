@@ -101,8 +101,8 @@ func loadConfig() config {
 		pathPrefix:     env("PATH_PREFIX", "/x/"),
 		statsPath:      env("STATS_PATH", "/stats"),
 		viewPath:       env("VIEW_PATH", "/v"),
-		minTokenLength: envInt("MIN_TOKEN_LENGTH", 20),
-		maxTokenLength: envInt("MAX_TOKEN_LENGTH", 96),
+		minTokenLength: envInt("MIN_TOKEN_LENGTH", 1),
+		maxTokenLength: envInt("MAX_TOKEN_LENGTH", 100),
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -185,6 +186,59 @@ func TestValidGetAndPostIncrement(t *testing.T) {
 			}
 			if fc.calls != 1 || fc.token != token {
 				t.Fatalf("counter calls=%d token=%q", fc.calls, fc.token)
+			}
+		})
+	}
+}
+
+func TestDefaultTokenLengthBoundaries(t *testing.T) {
+	tests := []struct {
+		name  string
+		token string
+		valid bool
+	}{
+		{name: "one character", token: "a", valid: true},
+		{name: "one hundred characters", token: strings.Repeat("a", 100), valid: true},
+		{name: "one hundred and one characters", token: strings.Repeat("a", 101), valid: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fc := &fakeCounter{}
+			h := New(Config{}, fc, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			res := httptest.NewRecorder()
+
+			h.ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/x/"+tt.token, nil))
+
+			wantCalls := 0
+			if tt.valid {
+				wantCalls = 1
+			}
+			if fc.calls != wantCalls {
+				t.Fatalf("counter calls = %d, want %d", fc.calls, wantCalls)
+			}
+		})
+	}
+}
+
+func TestAcceptedTokenPunctuation(t *testing.T) {
+	tokens := []string{
+		"amboina.id",
+		"amboina,id",
+		"amboina-id",
+		"amboina_id",
+	}
+
+	for _, token := range tokens {
+		t.Run(token, func(t *testing.T) {
+			fc := &fakeCounter{}
+			h := New(Config{}, fc, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			res := httptest.NewRecorder()
+
+			h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/x/"+token, nil))
+
+			if fc.calls != 1 || fc.token != token {
+				t.Fatalf("counter calls = %d token = %q", fc.calls, fc.token)
 			}
 		})
 	}

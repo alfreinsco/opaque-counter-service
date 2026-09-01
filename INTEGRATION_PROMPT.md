@@ -10,7 +10,7 @@ Spesifikasi layanan:
 - Base URL harus dibaca dari environment variable `OPAQUE_COUNTER_URL`.
 - Nilai lokal default yang boleh dipakai untuk development adalah `http://127.0.0.1:8080`.
 - Event dicatat dengan request `POST {OPAQUE_COUNTER_URL}/x/{token}`.
-- Token adalah ID counter acak URL-safe dengan panjang 20-96 karakter.
+- Token adalah ID counter acak URL-safe dengan panjang 1-100 karakter.
 - Respons sukses adalah `204 No Content` tanpa body.
 - Pengiriman counter tidak boleh menghambat atau menggagalkan proses utama aplikasi.
 - Jika layanan counter timeout atau gagal, catat error secara aman tanpa menampilkan token lengkap dan tanpa meneruskan error kepada pengguna.
@@ -23,7 +23,7 @@ Yang perlu dikerjakan:
 1. Pelajari framework, struktur proyek, pola konfigurasi, HTTP client, logging, dan testing yang sudah digunakan aplikasi ini.
 2. Tambahkan `OPAQUE_COUNTER_URL` ke contoh konfigurasi environment tanpa memasukkan secret atau nilai produksi.
 3. Buat satu modul/client kecil yang menerima token lalu mengirim request POST ke layanan counter.
-4. Validasi token sebelum request: hanya huruf, angka, tanda minus (`-`), dan underscore (`_`), dengan panjang 20-96 karakter.
+4. Validasi token sebelum request: hanya huruf, angka, titik (`.`), koma (`,`), tanda minus (`-`), dan underscore (`_`), dengan panjang 1-100 karakter.
 5. Pastikan slash berlebih pada base URL tidak menghasilkan URL yang salah.
 6. Integrasikan client pada event yang saya tentukan, tanpa mengubah respons atau alur utama aplikasi.
 7. Simpan mapping antara token dan kegunaannya di konfigurasi atau database aplikasi ini. Gunakan nama konfigurasi yang menjelaskan event, tetapi jangan membuat token mengandung makna tersebut.

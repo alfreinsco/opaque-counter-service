@@ -9,8 +9,8 @@ services:
       KEY_PREFIX: "c:v1:"
       PATH_PREFIX: "/x/"
       STATS_PATH: "/stats"
-      MIN_TOKEN_LENGTH: "20"
-      MAX_TOKEN_LENGTH: "96"
+      MIN_TOKEN_LENGTH: "1"
+      MAX_TOKEN_LENGTH: "100"
     depends_on:
       - redis
     ports:
