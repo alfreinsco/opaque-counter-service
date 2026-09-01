@@ -1,6 +1,8 @@
 package httpx
 
 import (
+	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -9,15 +11,62 @@ import (
 )
 
 type fakeCounter struct {
-	calls int
-	token string
-	err   error
+	calls  int
+	token  string
+	err    error
+	all    map[string]int64
+	allErr error
+}
+
+func (f *fakeCounter) All() (map[string]int64, error) {
+	return f.all, f.allErr
 }
 
 func (f *fakeCounter) Increment(token string) error {
 	f.calls++
 	f.token = token
 	return f.err
+}
+
+func TestGetStats(t *testing.T) {
+	fc := &fakeCounter{all: map[string]int64{"token-b": 7, "token-a": 3}}
+	h := New(Config{StatsPath: "/stats"}, fc, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	req := httptest.NewRequest(http.MethodGet, "/stats", nil)
+	res := httptest.NewRecorder()
+
+	h.ServeHTTP(res, req)
+
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", res.Code, http.StatusOK)
+	}
+	if got := res.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
+		t.Fatalf("content type = %q", got)
+	}
+	var body statsResponse
+	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Total != 2 || len(body.Counters) != 2 {
+		t.Fatalf("response = %+v", body)
+	}
+	if body.Counters[0].Token != "token-a" || body.Counters[0].Count != 3 {
+		t.Fatalf("first counter = %+v", body.Counters[0])
+	}
+	if fc.calls != 0 {
+		t.Fatalf("stats request incremented counter %d times", fc.calls)
+	}
+}
+
+func TestGetStatsRedisError(t *testing.T) {
+	fc := &fakeCounter{allErr: errors.New("redis unavailable")}
+	h := New(Config{StatsPath: "/stats"}, fc, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	res := httptest.NewRecorder()
+
+	h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/stats", nil))
+
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", res.Code, http.StatusInternalServerError)
+	}
 }
 
 func TestValidGetAndPostIncrement(t *testing.T) {

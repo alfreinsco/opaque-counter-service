@@ -1,17 +1,21 @@
 package httpx
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 )
 
 type Counter interface {
 	Increment(token string) error
+	All() (map[string]int64, error)
 }
 
 type Config struct {
 	PathPrefix string
+	StatsPath  string
 	MinToken   int
 	MaxToken   int
 }
@@ -32,6 +36,12 @@ func New(cfg Config, counter Counter, logger *slog.Logger) http.Handler {
 	if !strings.HasSuffix(cfg.PathPrefix, "/") {
 		cfg.PathPrefix += "/"
 	}
+	if cfg.StatsPath == "" {
+		cfg.StatsPath = "/stats"
+	}
+	if !strings.HasPrefix(cfg.StatsPath, "/") {
+		cfg.StatsPath = "/" + cfg.StatsPath
+	}
 	if cfg.MinToken <= 0 {
 		cfg.MinToken = 20
 	}
@@ -47,21 +57,58 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store, no-cache, max-age=0")
 	w.Header().Set("Pragma", "no-cache")
 
-	// Every public outcome deliberately looks identical.
-	defer w.WriteHeader(http.StatusNoContent)
+	if r.Method == http.MethodGet && r.URL.Path == h.cfg.StatsPath {
+		h.serveStats(w)
+		return
+	}
 
 	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
 	token, ok := h.extractToken(r.URL.Path)
 	if !ok {
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
 	if err := h.counter.Increment(token); err != nil {
 		// Error details stay server-side. Client still receives 204.
 		h.logger.Error("counter_increment_failed", "error", err)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type counterEntry struct {
+	Token string `json:"token"`
+	Count int64  `json:"count"`
+}
+
+type statsResponse struct {
+	Counters []counterEntry `json:"counters"`
+	Total    int            `json:"total"`
+}
+
+func (h *Handler) serveStats(w http.ResponseWriter) {
+	counters, err := h.counter.All()
+	if err != nil {
+		h.logger.Error("counter_list_failed", "error", err)
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("{\"error\":\"failed to read counters\"}\n"))
+		return
+	}
+
+	entries := make([]counterEntry, 0, len(counters))
+	for token, count := range counters {
+		entries = append(entries, counterEntry{Token: token, Count: count})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Token < entries[j].Token })
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if err := json.NewEncoder(w).Encode(statsResponse{Counters: entries, Total: len(entries)}); err != nil {
+		h.logger.Error("counter_list_response_failed", "error", err)
 	}
 }
 

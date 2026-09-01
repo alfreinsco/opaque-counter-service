@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -84,6 +85,73 @@ func (c *Client) Increment(token string) error {
 
 	healthy = true
 	return nil
+}
+
+func (c *Client) All() (map[string]int64, error) {
+	if c.closed.Load() {
+		return nil, errors.New("redis client closed")
+	}
+
+	rc, err := c.get()
+	if err != nil {
+		return nil, err
+	}
+
+	healthy := false
+	defer func() {
+		if healthy {
+			c.put(rc)
+		} else {
+			_ = rc.Close()
+		}
+	}()
+
+	result := make(map[string]int64)
+	cursor := "0"
+	for {
+		if err := rc.SetDeadline(time.Now().Add(c.cfg.IOTimeout)); err != nil {
+			return nil, err
+		}
+		if err := writeCommand(rc, "SCAN", cursor, "MATCH", c.cfg.KeyPrefix+"*", "COUNT", "1000"); err != nil {
+			return nil, err
+		}
+
+		nextCursor, keys, err := readScanResult(rc.reader)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, key := range keys {
+			if err := rc.SetDeadline(time.Now().Add(c.cfg.IOTimeout)); err != nil {
+				return nil, err
+			}
+			if err := writeCommand(rc, "GET", key); err != nil {
+				return nil, err
+			}
+
+			value, exists, err := readBulkString(rc.reader)
+			if err != nil {
+				return nil, err
+			}
+			if !exists {
+				continue
+			}
+
+			count, err := strconv.ParseInt(value, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid counter value for %q: %w", key, err)
+			}
+			result[strings.TrimPrefix(key, c.cfg.KeyPrefix)] = count
+		}
+
+		cursor = nextCursor
+		if cursor == "0" {
+			break
+		}
+	}
+
+	healthy = true
+	return result, nil
 }
 
 func (c *Client) get() (*conn, error) {
@@ -202,4 +270,88 @@ func readSimpleOK(r *bufio.Reader) error {
 		return errors.New(line[1 : len(line)-2])
 	}
 	return errors.New("unexpected redis response")
+}
+
+func readScanResult(r *bufio.Reader) (string, []string, error) {
+	length, err := readArrayLength(r)
+	if err != nil {
+		return "", nil, err
+	}
+	if length != 2 {
+		return "", nil, errors.New("invalid redis SCAN response")
+	}
+
+	cursor, exists, err := readBulkString(r)
+	if err != nil || !exists {
+		return "", nil, errors.New("invalid redis SCAN cursor")
+	}
+
+	keyCount, err := readArrayLength(r)
+	if err != nil {
+		return "", nil, err
+	}
+	keys := make([]string, 0, keyCount)
+	for i := 0; i < keyCount; i++ {
+		key, exists, err := readBulkString(r)
+		if err != nil || !exists {
+			return "", nil, errors.New("invalid redis SCAN key")
+		}
+		keys = append(keys, key)
+	}
+
+	return cursor, keys, nil
+}
+
+func readArrayLength(r *bufio.Reader) (int, error) {
+	line, err := r.ReadString('\n')
+	if err != nil {
+		return 0, err
+	}
+	if len(line) < 4 || line[0] != '*' {
+		return 0, errors.New("unexpected redis array response")
+	}
+	length, err := strconv.Atoi(line[1 : len(line)-2])
+	if err != nil {
+		return 0, err
+	}
+	if length < 0 {
+		return 0, errors.New("invalid redis array length")
+	}
+	return length, nil
+}
+
+func readBulkString(r *bufio.Reader) (string, bool, error) {
+	line, err := r.ReadString('\n')
+	if err != nil {
+		return "", false, err
+	}
+	if len(line) < 4 {
+		return "", false, errors.New("invalid redis bulk response")
+	}
+	if line[0] == '-' {
+		return "", false, errors.New(line[1 : len(line)-2])
+	}
+	if line[0] != '$' {
+		return "", false, errors.New("unexpected redis bulk response")
+	}
+
+	length, err := strconv.Atoi(line[1 : len(line)-2])
+	if err != nil {
+		return "", false, err
+	}
+	if length == -1 {
+		return "", false, nil
+	}
+	if length < 0 {
+		return "", false, errors.New("invalid redis bulk length")
+	}
+
+	payload := make([]byte, length+2)
+	if _, err := io.ReadFull(r, payload); err != nil {
+		return "", false, err
+	}
+	if payload[length] != '\r' || payload[length+1] != '\n' {
+		return "", false, errors.New("invalid redis bulk terminator")
+	}
+	return string(payload[:length]), true, nil
 }

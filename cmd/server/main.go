@@ -32,6 +32,7 @@ func main() {
 
 	handler := httpx.New(httpx.Config{
 		PathPrefix: cfg.pathPrefix,
+		StatsPath:  cfg.statsPath,
 		MinToken:   cfg.minTokenLength,
 		MaxToken:   cfg.maxTokenLength,
 	}, redis, logger)
@@ -83,6 +84,7 @@ type config struct {
 	redisDB        int
 	keyPrefix      string
 	pathPrefix     string
+	statsPath      string
 	minTokenLength int
 	maxTokenLength int
 }
@@ -95,6 +97,7 @@ func loadConfig() config {
 		redisDB:        envInt("REDIS_DB", 0),
 		keyPrefix:      env("KEY_PREFIX", "c:v1:"),
 		pathPrefix:     env("PATH_PREFIX", "/x/"),
+		statsPath:      env("STATS_PATH", "/stats"),
 		minTokenLength: envInt("MIN_TOKEN_LENGTH", 20),
 		maxTokenLength: envInt("MAX_TOKEN_LENGTH", 96),
 	}

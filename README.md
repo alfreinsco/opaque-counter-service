@@ -9,7 +9,7 @@ Tiny public counter collector written in Go using only the standard library.
 - Public responses are always `204 No Content`.
 - Invalid paths/tokens, unsupported HTTP methods, and Redis errors still look like `204` to the caller.
 - Redis error details are written only to server logs.
-- There is no public read/stats endpoint.
+- `GET /stats` returns all counters as JSON for internal/admin use.
 - The service does not know whether a token means a view, download, click, news slug, application view, etc.
 
 A token is simply the counter ID. Keep the semantic mapping in the application that owns the counter.
@@ -67,9 +67,23 @@ Both return:
 HTTP/1.1 204 No Content
 ```
 
-## Read a count internally
+## Read counters internally
 
-There is intentionally no HTTP stats endpoint. Read Redis from trusted infrastructure:
+Read all counters through HTTP:
+
+```bash
+curl http://127.0.0.1:8080/stats
+```
+
+Example response:
+
+```json
+{"counters":[{"token":"YOUR_RANDOM_TOKEN","count":3}],"total":1}
+```
+
+The endpoint is only bound to localhost by the default Docker configuration. Add authentication at your reverse proxy before exposing it publicly.
+
+Read one count directly from Redis:
 
 ```bash
 docker compose exec redis redis-cli GET 'c:v1:YOUR_RANDOM_TOKEN'
@@ -93,6 +107,7 @@ Also, GET may be triggered by crawlers, prefetchers, link scanners, or proxies. 
 | `REDIS_DB` | `0` | Redis database number |
 | `KEY_PREFIX` | `c:v1:` | Prefix for Redis counter keys |
 | `PATH_PREFIX` | `/x/` | Public opaque route prefix |
+| `STATS_PATH` | `/stats` | Internal endpoint for reading all counters |
 | `MIN_TOKEN_LENGTH` | `20` | Minimum accepted token length |
 | `MAX_TOKEN_LENGTH` | `96` | Maximum accepted token length |
 
