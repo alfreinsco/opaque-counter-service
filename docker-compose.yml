@@ -1,0 +1,26 @@
+services:
+  counter:
+    build: .
+    restart: unless-stopped
+    environment:
+      LISTEN_ADDRESS: ":8080"
+      REDIS_ADDRESS: "redis:6379"
+      REDIS_DB: "0"
+      KEY_PREFIX: "c:v1:"
+      PATH_PREFIX: "/x/"
+      MIN_TOKEN_LENGTH: "20"
+      MAX_TOKEN_LENGTH: "96"
+    depends_on:
+      - redis
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:
